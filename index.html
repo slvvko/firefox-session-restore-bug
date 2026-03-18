@@ -167,14 +167,19 @@
             <td>—</td>
         </tr>
         <tr id="probe-nav">
-            <td>4. Navigation Type</td>
-            <td><code>performance.getEntriesByType("navigation")[0].type</code></td>
+            <td>4. Navigation Type <em>(info)</em></td>
+            <td><code>navigation.type</code> — "back_forward" is normal for Ctrl+Shift+T</td>
             <td>—</td>
         </tr>
         <tr id="probe-transfer">
-            <td>5. Transfer Size</td>
-            <td><code>transferSize</code> — 0 means no network request</td>
+            <td>5. Transfer Size <em>(info)</em></td>
+            <td><code>transferSize</code> — 0 = HTTP cache (normal for restore)</td>
             <td>—</td>
+        </tr>
+        <tr id="probe-bfcache">
+            <td>6. bfcache</td>
+            <td><code>pageshow.persisted</code> — true means page was frozen/thawed from bfcache</td>
+            <td>waiting...</td>
         </tr>
     </table>
 
@@ -199,20 +204,29 @@
 
     <div class="section">
         <h2>How to Test</h2>
+        <p style="margin-bottom:8px"><strong>Important:</strong> Ctrl+Shift+T often uses <strong>bfcache</strong> (page frozen/thawed from memory) — that's normal browser behavior, not the bug. The real test is <strong>full browser restart</strong>.</p>
         <ol>
             <li>Open this page in <strong>Firefox</strong> over HTTP/HTTPS (no extensions, clean profile)</li>
-            <li>Verify the banner says <strong>"Fresh load"</strong> (green) and all probes show &#x2705;</li>
-            <li>The red "SIMULATED AD" boxes should disappear within 1 second</li>
-            <li>Wait 3 seconds for all delayed modifications to complete</li>
-            <li><strong>Test A</strong>: Close the tab (<kbd>Ctrl+W</kbd>) → Restore (<kbd>Ctrl+Shift+T</kbd>)</li>
-            <li><strong>Test B</strong>: Close the entire browser → Reopen → Let session restore activate the tab</li>
-            <li>Check probes:
-                <ul>
-                    <li><span style="color:#dc3545;font-weight:600">Red &#x274C;</span> = snapshot/cache evidence (bug)</li>
-                    <li><span style="color:#28a745;font-weight:600">Green &#x2705;</span> = fresh load (correct)</li>
-                </ul>
+            <li>Verify the banner says <strong>"Fresh load"</strong> (green)</li>
+            <li>Wait 3+ seconds for all delayed modifications to complete</li>
+            <li>
+                <strong>Test A — Ctrl+Shift+T</strong> (may use bfcache):<br>
+                Close tab (<kbd>Ctrl+W</kbd>) → Restore (<kbd>Ctrl+Shift+T</kbd>)<br>
+                <em>If Probe 6 shows "bfcache: YES", that's normal — page was just thawed from memory</em>
             </li>
-            <li>Repeat in <strong>Chrome</strong> — should always show all green</li>
+            <li>
+                <strong>Test B — Full browser restart</strong> (the real test):<br>
+                Close the <strong>entire browser</strong> → Reopen → Enable "Restore previous session" → Check probes<br>
+                <em>bfcache cannot survive browser restart — this forces actual session restore</em>
+            </li>
+            <li>Check <strong>Probes 1-3</strong> (primary detectors):
+                <ul>
+                    <li><span style="color:#dc3545;font-weight:600">Red &#x274C;</span> = DOM snapshot artifact detected (this is the bug)</li>
+                    <li><span style="color:#28a745;font-weight:600">Green &#x2705;</span> = scripts ran on fresh HTML (correct)</li>
+                </ul>
+                Probes 4-6 are informational — <code>back_forward</code> + <code>transferSize=0</code> is normal.
+            </li>
+            <li>Repeat in <strong>Chrome</strong> — should always show all green for probes 1-3</li>
         </ol>
     </div>
 
@@ -314,7 +328,9 @@
         }
 
         // ================================================================
-        // PROBE 4: NAVIGATION TYPE
+        // PROBE 4: NAVIGATION TYPE (informational — not counted as evidence)
+        // "back_forward" is EXPECTED for Ctrl+Shift+T in all browsers.
+        // Only "navigate" with probes 1-3 green confirms a full re-fetch.
         // ================================================================
         var navType = "unknown";
         var transferBytes = -1;
@@ -324,45 +340,79 @@
             transferBytes = navEntry ? navEntry.transferSize : -1;
         } catch (e) { /* ignore */ }
 
-        var navIsAbnormal = (navType !== "navigate" && navType !== "reload");
-        setProbe("probe-nav", navType + (navIsAbnormal ? " \u26a0" : " \u2705"),
-                 navIsAbnormal ? "warn" : "pass");
-        log("PROBE 4: navigation type = " + navType);
-        if (navIsAbnormal) snapshotEvidence++;
+        if (navType === "navigate") {
+            setProbe("probe-nav", navType + " \u2705 (full navigation)", "pass");
+        } else if (navType === "back_forward") {
+            setProbe("probe-nav", navType + " \u2139\ufe0f (normal for Ctrl+Shift+T)", "warn");
+        } else {
+            setProbe("probe-nav", navType, "warn");
+        }
+        log("PROBE 4 (info): navigation type = " + navType);
 
         // ================================================================
-        // PROBE 5: TRANSFER SIZE
-        // If transferSize is 0, the page was served entirely from cache
-        // without a network request — the network stack was bypassed.
+        // PROBE 5: TRANSFER SIZE (informational — not counted as evidence)
+        // transferSize=0 means HTTP cache was used. This is normal for
+        // session restore in BOTH browsers. Not a bug by itself.
+        // The real question is: did scripts re-execute on fresh HTML?
+        // (That's what probes 1-3 answer.)
         // ================================================================
         if (transferBytes === 0) {
-            setProbe("probe-transfer", "\u274c 0 bytes (no network request!)", "fail");
-            log("PROBE 5 FAIL: transferSize=0 — network was bypassed");
-            snapshotEvidence++;
+            setProbe("probe-transfer", "0 bytes \u2139\ufe0f (HTTP cache — normal for restore)", "warn");
+            log("PROBE 5 (info): transferSize=0 — served from HTTP cache");
         } else if (transferBytes > 0) {
-            setProbe("probe-transfer", "\u2705 " + transferBytes + " bytes", "pass");
-            log("PROBE 5 OK: transferSize=" + transferBytes);
+            setProbe("probe-transfer", transferBytes + " bytes \u2705 (network fetch)", "pass");
+            log("PROBE 5 (info): transferSize=" + transferBytes + " — fetched from network");
         } else {
             setProbe("probe-transfer", "unavailable", "warn");
-            log("PROBE 5: transferSize unavailable");
+            log("PROBE 5 (info): transferSize unavailable");
         }
 
         // ================================================================
         // OVERALL RESULT
+        // Only probes 1-3 count as snapshot evidence.
+        // Probes 4-5 are informational (back_forward + cache is normal).
         // ================================================================
         var banner = document.getElementById("result-banner");
         if (snapshotEvidence > 0) {
             banner.className = "result-banner result-snapshot";
-            banner.textContent = "\u26a0 SNAPSHOT/CACHE RESTORE DETECTED — "
-                + snapshotEvidence + " probe(s) found evidence that Firefox did NOT "
-                + "re-fetch this page from the server";
-            log("RESULT: " + snapshotEvidence + " probe(s) detected snapshot/cache restore");
+            banner.textContent = "\u26a0 SNAPSHOT RESTORE DETECTED — "
+                + snapshotEvidence + " probe(s) found DOM artifacts from a previous load. "
+                + "Firefox did not re-execute scripts on fresh HTML.";
+            log("RESULT: " + snapshotEvidence + " probe(s) detected snapshot restore");
         } else {
             banner.className = "result-banner result-fresh";
-            banner.textContent = "\u2705 Fresh load — all 5 probes confirm the page was "
-                + "fetched from the server. This is correct behavior.";
-            log("RESULT: All probes OK — fresh load from server");
+            banner.textContent = "\u2705 Fresh load — probes 1-3 confirm scripts executed on "
+                + "fresh HTML. " + (navType === "back_forward"
+                    ? "(Served from HTTP cache — normal for Ctrl+Shift+T)"
+                    : "(Fetched from server)");
+            log("RESULT: Probes 1-3 OK — scripts ran on fresh HTML"
+                + (navType === "back_forward" ? " (from HTTP cache)" : ""));
         }
+
+        // ================================================================
+        // PROBE 6: bfcache DETECTION
+        // If the page is restored from bfcache, pageshow fires with
+        // persisted=true. bfcache preserves the ENTIRE page state
+        // (JS heap + DOM) — this is correct browser behavior, not a bug.
+        // When bfcache is used, scripts do NOT re-execute, so probes 1-3
+        // still show results from the original load.
+        // ================================================================
+        window.addEventListener("pageshow", function (e) {
+            if (e.persisted) {
+                setProbe("probe-bfcache", "\u2139\ufe0f YES — page restored from bfcache (expected)", "warn");
+                log("PROBE 6: bfcache restore detected (pageshow.persisted=true)");
+                log("bfcache preserves full page state — this is CORRECT browser behavior");
+                log("To test session restore (not bfcache): close the ENTIRE browser and reopen");
+                // Update banner to explain bfcache
+                var b = document.getElementById("result-banner");
+                b.className = "result-banner result-warn";
+                b.textContent = "\u2139\ufe0f bfcache restore — page was frozen/thawed from memory. "
+                    + "This is normal. To test session restore: close the entire browser and reopen.";
+            } else {
+                setProbe("probe-bfcache", "\u2705 No (page was loaded, not thawed)", "pass");
+                log("PROBE 6: Not bfcache (pageshow.persisted=false)");
+            }
+        });
 
         // ================================================================
         // AUTO-MODIFICATIONS ON DOMContentLoaded
