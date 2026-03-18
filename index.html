@@ -123,7 +123,7 @@
 </head>
 <body>
     <h1>Firefox Session Restore Bug — Test Page</h1>
-    <p class="subtitle">Auto-detects whether this page was loaded from the server or from a stale DOM snapshot / HTTP cache without network</p>
+    <p class="subtitle">Detects whether Firefox session restore bypasses the network stack, causing network proxy injections (e.g. AdGuard) to be lost</p>
 
     <!--
         DETECTION PROBE 1: SOURCE MARKER
@@ -181,6 +181,16 @@
             <td><code>pageshow.persisted</code> — true means page was frozen/thawed from bfcache</td>
             <td>waiting...</td>
         </tr>
+        <tr id="probe-proxy">
+            <td><strong>7. Proxy Bypass</strong></td>
+            <td>Compare &lt;head&gt; styles in DOM vs fresh <code>fetch()</code> through network. Different = proxy was bypassed.</td>
+            <td>checking...</td>
+        </tr>
+        <tr id="probe-proxy-detail">
+            <td></td>
+            <td>Styles in DOM at load / Styles in fresh fetch</td>
+            <td>—</td>
+        </tr>
     </table>
 
     <!-- Ad placeholders — emulate ad containers like on 423down.com.
@@ -204,41 +214,42 @@
 
     <div class="section">
         <h2>How to Test</h2>
-        <p style="margin-bottom:8px"><strong>Important:</strong> Ctrl+Shift+T often uses <strong>bfcache</strong> (page frozen/thawed from memory) — that's normal browser behavior, not the bug. The real test is <strong>full browser restart</strong>.</p>
+        <p style="margin-bottom:8px"><strong>The bug requires a network proxy (e.g. AdGuard) to manifest.</strong> Without a proxy, both browsers behave identically.</p>
         <ol>
-            <li>Open this page in <strong>Firefox</strong> over HTTP/HTTPS (no extensions, clean profile)</li>
-            <li>Verify the banner says <strong>"Fresh load"</strong> (green)</li>
+            <li>Install and enable <strong>AdGuard</strong> (or any MITM content-filtering proxy)</li>
+            <li>Open this page in <strong>Firefox</strong> over HTTPS</li>
+            <li>Verify <strong>Probe 7</strong> shows the proxy is active (styles in DOM match styles in fetch)</li>
             <li>Wait 3+ seconds for all delayed modifications to complete</li>
             <li>
-                <strong>Test A — Ctrl+Shift+T</strong> (may use bfcache):<br>
-                Close tab (<kbd>Ctrl+W</kbd>) → Restore (<kbd>Ctrl+Shift+T</kbd>)<br>
-                <em>If Probe 6 shows "bfcache: YES", that's normal — page was just thawed from memory</em>
-            </li>
-            <li>
-                <strong>Test B — Full browser restart</strong> (the real test):<br>
-                Close the <strong>entire browser</strong> → Reopen → Enable "Restore previous session" → Check probes<br>
+                <strong>Test A — Full browser restart</strong> (primary test):<br>
+                Close the <strong>entire browser</strong> (Quit Firefox) → Reopen → Session restore activates the tab<br>
                 <em>bfcache cannot survive browser restart — this forces actual session restore</em>
             </li>
-            <li>Check <strong>Probes 1-3</strong> (primary detectors):
-                <ul>
-                    <li><span style="color:#dc3545;font-weight:600">Red &#x274C;</span> = DOM snapshot artifact detected (this is the bug)</li>
-                    <li><span style="color:#28a745;font-weight:600">Green &#x2705;</span> = scripts ran on fresh HTML (correct)</li>
-                </ul>
-                Probes 4-6 are informational — <code>back_forward</code> + <code>transferSize=0</code> is normal.
+            <li>
+                <strong>Test B — Ctrl+Shift+T</strong> (may use bfcache — less reliable):<br>
+                Close tab (<kbd>Ctrl+W</kbd>) → Restore (<kbd>Ctrl+Shift+T</kbd>)<br>
+                <em>If Probe 6 shows bfcache, the page was just thawed from memory (normal)</em>
             </li>
-            <li>Repeat in <strong>Chrome</strong> — should always show all green for probes 1-3</li>
+            <li>Check <strong>Probe 7</strong> (the key test):
+                <ul>
+                    <li><span style="color:#dc3545;font-weight:600">Red &#x274C; PROXY BYPASS</span> = DOM has fewer styles than a fresh fetch → proxy modifications were lost</li>
+                    <li><span style="color:#28a745;font-weight:600">Green &#x2705;</span> = DOM matches fresh fetch → proxy styles preserved</li>
+                </ul>
+                Probes 1-3 detect DOM snapshot artifacts. Probes 4-6 are informational.
+            </li>
+            <li>Repeat in <strong>Chrome</strong> — Probe 7 should always show green (proxy styles preserved)</li>
         </ol>
     </div>
 
     <div class="section">
-        <h2>What This Page Emulates</h2>
-        <p>This page replicates the dynamic DOM modification patterns found on <strong>423down.com</strong>, a real-world site where the Firefox session restore bug is visible with content filtering proxies:</p>
+        <h2>What This Page Tests</h2>
+        <p><strong>Core bug:</strong> When Firefox restores a session (browser restart or Ctrl+Shift+T), it serves the page from HTTP cache — the <strong>original server response</strong>, before any network proxy could modify it. This means:</p>
         <ul>
-            <li><strong>Dynamic <code>&lt;style&gt;</code> injection</strong> on <code>DOMContentLoaded</code> — hides "ad" elements (emulates AdGuard CSS injection)</li>
-            <li><strong>Dynamic <code>&lt;script&gt;</code> injection</strong> — creates and appends a script element to <code>&lt;head&gt;</code></li>
-            <li><strong>Delayed DOM modification</strong> via <code>setTimeout(fn, 2000)</code> — emulates ad script initialization</li>
-            <li><strong>No Cache-Control headers</strong> — relies on browser heuristic caching (same as 423down.com)</li>
+            <li><strong>AdGuard/proxy-injected CSS</strong> (added during HTTP transit) is lost → ads flash back into visibility</li>
+            <li><strong>Proxy-injected scripts</strong> are lost → content filtering, userscripts, and cosmetic rules break</li>
+            <li><strong>Any MITM modification</strong> is lost — the browser serves the pre-proxy cached response</li>
         </ul>
+        <p>This page emulates patterns from <strong>423down.com</strong> (a confirmed reproducer with AdGuard) and uses <code>fetch()</code> to detect the proxy bypass.</p>
         <p class="note">Related bugs: <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=706970">706970</a> (staleness), <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1395510">1395510</a>, <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1440408">1440408</a></p>
     </div>
 
