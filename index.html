@@ -8,7 +8,7 @@
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            max-width: 720px;
+            max-width: 780px;
             margin: 0 auto;
             padding: 24px;
             line-height: 1.6;
@@ -18,6 +18,8 @@
         h1 { font-size: 1.4em; margin-bottom: 4px; }
         h2 { font-size: 1.1em; margin: 20px 0 8px; }
         .subtitle { font-size: 0.85em; color: #666; margin-bottom: 16px; }
+
+        /* Result banner */
         .result-banner {
             padding: 14px 18px;
             border-radius: 6px;
@@ -26,47 +28,52 @@
             font-size: 1em;
         }
         .result-fresh {
-            background: #d4edda;
-            color: #155724;
-            border: 2px solid #28a745;
+            background: #d4edda; color: #155724; border: 2px solid #28a745;
         }
         .result-snapshot {
-            background: #f8d7da;
-            color: #721c24;
-            border: 2px solid #dc3545;
+            background: #f8d7da; color: #721c24; border: 2px solid #dc3545;
         }
-        .info-grid {
-            display: grid;
-            grid-template-columns: auto 1fr;
-            gap: 4px 12px;
+        .result-warn {
+            background: #fff3cd; color: #856404; border: 2px solid #ffc107;
+        }
+
+        /* Probe table */
+        .probe-table {
+            width: 100%;
+            border-collapse: collapse;
             margin: 12px 0;
-            font-size: 0.9em;
+            font-size: 0.88em;
         }
-        .info-label { font-weight: 600; white-space: nowrap; }
-        .info-value { font-family: monospace; color: #444; word-break: break-all; }
-        .actions { margin: 16px 0; display: flex; gap: 8px; flex-wrap: wrap; }
-        button {
-            padding: 8px 16px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            background: #f8f8f8;
-            cursor: pointer;
-            font-size: 0.9em;
+        .probe-table th {
+            text-align: left;
+            padding: 6px 10px;
+            background: #f0f0f0;
+            border: 1px solid #ddd;
+            font-weight: 600;
         }
-        button:hover { background: #e8e8e8; }
-        #item-list {
-            list-style: none;
-            margin: 8px 0;
-            padding: 0;
-        }
-        #item-list li {
-            padding: 4px 8px;
-            margin: 2px 0;
-            background: #f5f5f5;
-            border-radius: 3px;
-            font-size: 0.9em;
+        .probe-table td {
+            padding: 6px 10px;
+            border: 1px solid #ddd;
             font-family: monospace;
+            word-break: break-all;
         }
+        .probe-table .pass { background: #d4edda; }
+        .probe-table .fail { background: #f8d7da; }
+        .probe-table .warn { background: #fff3cd; }
+
+        /* Ad placeholders — visible by default, hidden by dynamic <style> */
+        .ad-placeholder {
+            background: #dc3545;
+            color: #fff;
+            padding: 16px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-weight: 600;
+            text-align: center;
+            font-size: 0.95em;
+        }
+
+        /* Sections */
         .section {
             margin: 20px 0;
             padding: 16px;
@@ -77,225 +84,342 @@
         .section h2 { margin-top: 0; }
         .section ol, .section ul { padding-left: 20px; }
         .section li { margin: 4px 0; font-size: 0.9em; }
-        .warning {
+        .warning-box {
             padding: 10px 14px;
-            background: #fff3cd;
-            border: 1px solid #ffc107;
+            background: #f8d7da;
+            border: 2px solid #dc3545;
             border-radius: 4px;
-            font-size: 0.85em;
+            font-size: 0.9em;
+            font-weight: 600;
             margin: 12px 0;
         }
         .note { font-size: 0.85em; color: #666; margin-top: 8px; }
         kbd {
-            background: #eee;
-            border: 1px solid #ccc;
-            border-radius: 3px;
-            padding: 1px 5px;
-            font-size: 0.85em;
+            background: #eee; border: 1px solid #ccc;
+            border-radius: 3px; padding: 1px 5px; font-size: 0.85em;
         }
-        .log { margin: 8px 0; }
+
+        /* Log */
+        .log { margin: 8px 0; max-height: 200px; overflow-y: auto; }
         .log-entry {
             font-family: monospace;
-            font-size: 0.82em;
-            padding: 2px 0;
+            font-size: 0.8em;
+            padding: 1px 0;
             color: #555;
+        }
+        .log-entry.error { color: #dc3545; font-weight: 600; }
+
+        /* Delayed content area */
+        #delayed-content {
+            margin: 10px 0;
+            padding: 12px;
+            border: 2px dashed #ccc;
+            border-radius: 4px;
+            min-height: 40px;
+            font-size: 0.9em;
+            color: #888;
         }
     </style>
 </head>
 <body>
-    <h1>Firefox Session Restore Bug</h1>
-    <p class="subtitle">Detects whether this page was loaded from the server or from Firefox's internal DOM snapshot</p>
+    <h1>Firefox Session Restore Bug — Test Page</h1>
+    <p class="subtitle">Auto-detects whether this page was loaded from the server or from a stale DOM snapshot / HTTP cache without network</p>
 
     <!--
-        SNAPSHOT DETECTION MARKER
-        The HTML source contains "server". On first load, the script below reads
-        this value, records it, then overwrites it with "js-modified-{timestamp}".
-        On session restore:
-          - If Firefox reconstructed the page from its DOM snapshot, this element
-            already contains "js-modified-..." from the PREVIOUS script execution.
-          - If the browser re-fetched from the server, it contains "server".
+        DETECTION PROBE 1: SOURCE MARKER
+        HTML source says "server". Script reads it BEFORE modifying it.
+        If Firefox restored from DOM snapshot, it will contain "js-modified-..."
+        from the previous script execution.
     -->
-    <span id="source-marker" style="display:none">server</span>
+    <span id="source-marker" hidden>server</span>
+
+    <!-- file:// protocol warning (shown/hidden by script) -->
+    <div id="file-protocol-warning" class="warning-box" hidden>
+        This page is loaded via file:// protocol. Session restore behavior differs
+        for file:// URLs. Please serve over HTTP/HTTPS for valid testing.
+        Use: <code>python3 -m http.server 8090</code>
+    </div>
 
     <div id="result-banner" class="result-banner result-fresh">
-        Detecting...
+        Running detection probes...
     </div>
 
-    <div class="info-grid">
-        <span class="info-label">Source marker read:</span>
-        <span class="info-value" id="marker-value">—</span>
+    <!-- Detection probe results -->
+    <table class="probe-table">
+        <tr>
+            <th>Probe</th>
+            <th>What it checks</th>
+            <th>Result</th>
+        </tr>
+        <tr id="probe-marker">
+            <td>1. Source Marker</td>
+            <td>Hidden &lt;span&gt; text: "server" (HTML) vs "js-modified-..." (snapshot)</td>
+            <td>—</td>
+        </tr>
+        <tr id="probe-style">
+            <td>2. Dynamic &lt;style&gt;</td>
+            <td>Does &lt;style id="dynamic-ad-hide"&gt; already exist before script creates it?</td>
+            <td>—</td>
+        </tr>
+        <tr id="probe-global">
+            <td>3. Global Variable</td>
+            <td>Is <code>window.__DYNAMIC_LOADED</code> already <code>true</code>?</td>
+            <td>—</td>
+        </tr>
+        <tr id="probe-nav">
+            <td>4. Navigation Type</td>
+            <td><code>performance.getEntriesByType("navigation")[0].type</code></td>
+            <td>—</td>
+        </tr>
+        <tr id="probe-transfer">
+            <td>5. Transfer Size</td>
+            <td><code>transferSize</code> — 0 means no network request</td>
+            <td>—</td>
+        </tr>
+    </table>
 
-        <span class="info-label">Detection result:</span>
-        <span class="info-value" id="detection-result">—</span>
-
-        <span class="info-label">Navigation type:</span>
-        <span class="info-value" id="nav-type">—</span>
-
-        <span class="info-label">Page loaded at:</span>
-        <span class="info-value" id="load-timestamp">—</span>
-
-        <span class="info-label">Previous load at:</span>
-        <span class="info-value" id="prev-timestamp">—</span>
-
-        <span class="info-label">Injected &lt;style&gt; in DOM:</span>
-        <span class="info-value" id="style-present">—</span>
-
-        <span class="info-label">Items in list:</span>
-        <span class="info-value" id="item-count">—</span>
+    <!-- Ad placeholders — emulate ad containers like on 423down.com.
+         These are visible (red) by default.
+         On DOMContentLoaded, a dynamic <style> hides them.
+         If session restore bypasses the network/scripts, they flash back. -->
+    <div class="ad-placeholder" id="ad-top">
+        SIMULATED AD — This red box should be hidden by the dynamic &lt;style&gt; injected on load.
+        If you see this after session restore, the script did not run (or ran late).
     </div>
-
-    <div id="log" class="log"></div>
 
     <div class="section">
-        <h2>Interactive Tests</h2>
-        <p>Click these buttons to mutate the DOM, then close and restore the tab to see what survives.</p>
-        <div class="actions">
-            <button id="btn-add-item">Add List Item</button>
-            <button id="btn-inject-style">Inject &lt;style&gt; (blue background)</button>
-        </div>
-        <ul id="item-list"></ul>
+        <h2>Delayed Content (emulates 423down.com ad loading)</h2>
+        <p>After DOMContentLoaded, a 2-second <code>setTimeout</code> injects content here:</p>
+        <div id="delayed-content">Waiting for delayed script...</div>
+    </div>
+
+    <div class="ad-placeholder" id="ad-bottom">
+        SIMULATED AD — Another ad placeholder. Hidden by dynamic &lt;style&gt; on load.
     </div>
 
     <div class="section">
-        <h2>How to Reproduce</h2>
-        <div class="warning">
-            This page must be served over <strong>HTTP/HTTPS</strong> (not <code>file://</code>).
-            Use <code>python3 -m http.server</code> for local testing, or deploy to GitHub Pages.
-        </div>
+        <h2>How to Test</h2>
         <ol>
-            <li>Open this page in <strong>Firefox</strong> (no extensions, clean profile recommended)</li>
-            <li>Note the banner — it should say <strong>"Fresh load from server"</strong> (green)</li>
-            <li>Optionally click <strong>"Inject &lt;style&gt;"</strong> to change the background to blue</li>
-            <li>Close the tab (<kbd>Ctrl+W</kbd> / <kbd>Cmd+W</kbd>)</li>
-            <li>Restore the tab (<kbd>Ctrl+Shift+T</kbd> / <kbd>Cmd+Shift+T</kbd>)</li>
-            <li>Check the banner:
+            <li>Open this page in <strong>Firefox</strong> over HTTP/HTTPS (no extensions, clean profile)</li>
+            <li>Verify the banner says <strong>"Fresh load"</strong> (green) and all probes show &#x2705;</li>
+            <li>The red "SIMULATED AD" boxes should disappear within 1 second</li>
+            <li>Wait 3 seconds for all delayed modifications to complete</li>
+            <li><strong>Test A</strong>: Close the tab (<kbd>Ctrl+W</kbd>) → Restore (<kbd>Ctrl+Shift+T</kbd>)</li>
+            <li><strong>Test B</strong>: Close the entire browser → Reopen → Let session restore activate the tab</li>
+            <li>Check probes:
                 <ul>
-                    <li><strong style="color:#721c24">Red "SNAPSHOT RESTORE"</strong> — Firefox loaded the page from its internal DOM snapshot instead of re-fetching from the server. This is the bug.</li>
-                    <li><strong style="color:#155724">Green "Fresh load"</strong> — the page was re-fetched from the server. This is correct behavior.</li>
+                    <li><span style="color:#dc3545;font-weight:600">Red &#x274C;</span> = snapshot/cache evidence (bug)</li>
+                    <li><span style="color:#28a745;font-weight:600">Green &#x2705;</span> = fresh load (correct)</li>
                 </ul>
             </li>
-            <li>Repeat the same steps in <strong>Chrome</strong> — it should always show green (fresh load)</li>
+            <li>Repeat in <strong>Chrome</strong> — should always show all green</li>
         </ol>
     </div>
 
     <div class="section">
-        <h2>What This Proves</h2>
-        <p>When Firefox restores a tab via <kbd>Ctrl+Shift+T</kbd> or session restore (browser restart), it may reconstruct the page from an <strong>internal DOM snapshot</strong> rather than re-fetching from the server. This snapshot includes modifications made by JavaScript during the previous page load.</p>
-        <p>This causes problems for:</p>
+        <h2>What This Page Emulates</h2>
+        <p>This page replicates the dynamic DOM modification patterns found on <strong>423down.com</strong>, a real-world site where the Firefox session restore bug is visible with content filtering proxies:</p>
         <ul>
-            <li><strong>Dynamic websites</strong> — server-side state changes (e.g. GitHub labels, comments) are not reflected because the page is never re-fetched</li>
-            <li><strong>Network proxies</strong> — tools like content filters inject CSS/JS during transit; the snapshot bypasses the network entirely, so injections are lost</li>
-            <li><strong>Cache-Control headers</strong> — <code>no-store</code> and <code>no-cache</code> are ignored because no HTTP request is made</li>
+            <li><strong>Dynamic <code>&lt;style&gt;</code> injection</strong> on <code>DOMContentLoaded</code> — hides "ad" elements (emulates AdGuard CSS injection)</li>
+            <li><strong>Dynamic <code>&lt;script&gt;</code> injection</strong> — creates and appends a script element to <code>&lt;head&gt;</code></li>
+            <li><strong>Delayed DOM modification</strong> via <code>setTimeout(fn, 2000)</code> — emulates ad script initialization</li>
+            <li><strong>No Cache-Control headers</strong> — relies on browser heuristic caching (same as 423down.com)</li>
         </ul>
-        <p class="note">Related: <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=706970">Bug 706970</a> (general staleness), <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1395510">Bug 1395510</a>, <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1440408">Bug 1440408</a> (GitHub/Bugzilla symptoms)</p>
+        <p class="note">Related bugs: <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=706970">706970</a> (staleness), <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1395510">1395510</a>, <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1440408">1440408</a></p>
     </div>
 
+    <h2>Event Log</h2>
+    <div id="log" class="log"></div>
+
     <script>
-        (function () {
-            "use strict";
+    (function () {
+        "use strict";
 
-            var now = new Date().toISOString();
-            var logEl = document.getElementById("log");
+        var now = new Date().toISOString();
+        var logEl = document.getElementById("log");
+        var snapshotEvidence = 0;
 
-            function log(msg) {
-                var div = document.createElement("div");
-                div.className = "log-entry";
-                div.textContent = "[" + now + "] " + msg;
-                logEl.appendChild(div);
-            }
+        function log(msg, isError) {
+            var div = document.createElement("div");
+            div.className = "log-entry" + (isError ? " error" : "");
+            div.textContent = "[" + now + "] " + msg;
+            logEl.appendChild(div);
+        }
 
-            // === SNAPSHOT DETECTION ===
-            // Read the marker BEFORE modifying it.
-            // In the HTML source, it says "server".
-            // If Firefox restored from a DOM snapshot that includes our previous
-            // script's modification, it will say "js-modified-<old-timestamp>".
-            var marker = document.getElementById("source-marker");
-            var markerValue = marker.textContent.trim();
-            var isSnapshot = markerValue !== "server";
+        function setProbe(id, result, cls) {
+            var row = document.getElementById(id);
+            if (row) row.lastElementChild.textContent = result;
+            if (row && cls) row.lastElementChild.className = cls;
+        }
 
-            document.getElementById("marker-value").textContent = markerValue;
+        // === file:// PROTOCOL WARNING ===
+        if (location.protocol === "file:") {
+            document.getElementById("file-protocol-warning").hidden = false;
+            log("WARNING: Loaded via file:// — results may be invalid", true);
+        }
 
-            if (isSnapshot) {
-                log("SNAPSHOT DETECTED: marker was '" + markerValue + "' (not 'server')");
-                log("This page was restored from Firefox's internal DOM snapshot.");
-                document.getElementById("detection-result").textContent =
-                    "SNAPSHOT RESTORE — page was NOT re-fetched from server";
-                var banner = document.getElementById("result-banner");
-                banner.className = "result-banner result-snapshot";
-                banner.textContent = "\u26a0 SNAPSHOT RESTORE DETECTED — Firefox loaded this page from a stale DOM snapshot, not from the server";
-            } else {
-                log("Fresh load: marker was 'server' (matches HTML source)");
-                document.getElementById("detection-result").textContent =
-                    "Fresh load — page was fetched from server (correct)";
-                var banner = document.getElementById("result-banner");
-                banner.className = "result-banner result-fresh";
-                banner.textContent = "\u2705 Fresh load from server — this is correct behavior";
-            }
+        // ================================================================
+        // PROBE 1: SOURCE MARKER
+        // HTML source contains "server". If the DOM was restored from a
+        // snapshot that includes our previous modification, it will contain
+        // "js-modified-<timestamp>" instead.
+        // ================================================================
+        var marker = document.getElementById("source-marker");
+        var markerValue = marker.textContent.trim();
+        var markerIsSnapshot = markerValue !== "server";
 
-            // Overwrite the marker for next time.
-            // If Firefox snapshots this DOM, future restores will read this value.
-            marker.textContent = "js-modified-" + now;
-            log("Marker overwritten to: " + marker.textContent);
+        if (markerIsSnapshot) {
+            setProbe("probe-marker", "\u274c SNAPSHOT: " + markerValue, "fail");
+            log("PROBE 1 FAIL: marker='" + markerValue + "' (expected 'server')");
+            snapshotEvidence++;
+        } else {
+            setProbe("probe-marker", "\u2705 server (fresh)", "pass");
+            log("PROBE 1 OK: marker='server'");
+        }
 
-            // === NAVIGATION TYPE ===
-            try {
-                var navEntry = performance.getEntriesByType("navigation")[0];
-                var navType = navEntry ? navEntry.type : "unknown";
-                var transferSize = navEntry ? navEntry.transferSize : "unknown";
-                document.getElementById("nav-type").textContent =
-                    navType + " (transferSize: " + transferSize + " bytes)";
-                log("Navigation type: " + navType + ", transferSize: " + transferSize);
-            } catch (e) {
-                document.getElementById("nav-type").textContent = "unavailable";
-            }
+        // Overwrite marker for next load's detection
+        marker.textContent = "js-modified-" + now;
 
-            // === TIMESTAMPS ===
-            document.getElementById("load-timestamp").textContent = now;
-            if (isSnapshot) {
-                // Extract old timestamp from the marker value
-                var oldTs = markerValue.replace("js-modified-", "");
-                document.getElementById("prev-timestamp").textContent = oldTs;
-            } else {
-                document.getElementById("prev-timestamp").textContent = "N/A (first load)";
-            }
+        // ================================================================
+        // PROBE 2: DYNAMIC <style> EXISTENCE
+        // On DOMContentLoaded we will inject <style id="dynamic-ad-hide">.
+        // If it already exists NOW (before we create it), the DOM was
+        // restored from a snapshot that includes the previous load's injection.
+        // ================================================================
+        var styleAlreadyExists = !!document.getElementById("dynamic-ad-hide");
 
-            // === CHECK FOR SURVIVING DOM MUTATIONS ===
-            // If the snapshot includes user-triggered mutations from the previous
-            // session, these elements will already be in the DOM.
-            var existingItems = document.getElementById("item-list").children.length;
-            var existingStyle = !!document.getElementById("injected-bg-style");
-            document.getElementById("item-count").textContent = existingItems +
-                (existingItems > 0 ? " (survived from snapshot!)" : " (none)");
-            document.getElementById("style-present").textContent = existingStyle ?
-                "Yes — survived from snapshot!" : "No";
-            if (existingItems > 0) log("Found " + existingItems + " list items from snapshot");
-            if (existingStyle) log("Found injected <style> element from snapshot");
+        if (styleAlreadyExists) {
+            setProbe("probe-style", "\u274c Already in DOM (snapshot)", "fail");
+            log("PROBE 2 FAIL: <style id='dynamic-ad-hide'> already exists");
+            snapshotEvidence++;
+        } else {
+            setProbe("probe-style", "\u2705 Not in DOM (will be created)", "pass");
+            log("PROBE 2 OK: <style> does not exist yet");
+        }
 
-            // === INTERACTIVE TESTS ===
-            var itemCount = existingItems;
+        // ================================================================
+        // PROBE 3: GLOBAL VARIABLE
+        // On DOMContentLoaded we will inject a <script> that sets
+        // window.__DYNAMIC_LOADED = true. If it's already true, snapshot.
+        // ================================================================
+        var globalAlreadySet = window.__DYNAMIC_LOADED === true;
 
-            document.getElementById("btn-add-item").addEventListener("click", function () {
-                itemCount++;
-                var li = document.createElement("li");
-                li.textContent = "Item " + itemCount + " — added at " + new Date().toISOString();
-                document.getElementById("item-list").appendChild(li);
-                document.getElementById("item-count").textContent = itemCount + " item(s)";
-                log("Added item " + itemCount);
-            });
+        if (globalAlreadySet) {
+            setProbe("probe-global", "\u274c Already true (snapshot)", "fail");
+            log("PROBE 3 FAIL: window.__DYNAMIC_LOADED already true");
+            snapshotEvidence++;
+        } else {
+            setProbe("probe-global", "\u2705 undefined (fresh)", "pass");
+            log("PROBE 3 OK: window.__DYNAMIC_LOADED is undefined");
+        }
 
-            document.getElementById("btn-inject-style").addEventListener("click", function () {
-                if (document.getElementById("injected-bg-style")) {
-                    log("Style already injected");
-                    return;
-                }
+        // ================================================================
+        // PROBE 4: NAVIGATION TYPE
+        // ================================================================
+        var navType = "unknown";
+        var transferBytes = -1;
+        try {
+            var navEntry = performance.getEntriesByType("navigation")[0];
+            navType = navEntry ? navEntry.type : "unavailable";
+            transferBytes = navEntry ? navEntry.transferSize : -1;
+        } catch (e) { /* ignore */ }
+
+        var navIsAbnormal = (navType !== "navigate" && navType !== "reload");
+        setProbe("probe-nav", navType + (navIsAbnormal ? " \u26a0" : " \u2705"),
+                 navIsAbnormal ? "warn" : "pass");
+        log("PROBE 4: navigation type = " + navType);
+        if (navIsAbnormal) snapshotEvidence++;
+
+        // ================================================================
+        // PROBE 5: TRANSFER SIZE
+        // If transferSize is 0, the page was served entirely from cache
+        // without a network request — the network stack was bypassed.
+        // ================================================================
+        if (transferBytes === 0) {
+            setProbe("probe-transfer", "\u274c 0 bytes (no network request!)", "fail");
+            log("PROBE 5 FAIL: transferSize=0 — network was bypassed");
+            snapshotEvidence++;
+        } else if (transferBytes > 0) {
+            setProbe("probe-transfer", "\u2705 " + transferBytes + " bytes", "pass");
+            log("PROBE 5 OK: transferSize=" + transferBytes);
+        } else {
+            setProbe("probe-transfer", "unavailable", "warn");
+            log("PROBE 5: transferSize unavailable");
+        }
+
+        // ================================================================
+        // OVERALL RESULT
+        // ================================================================
+        var banner = document.getElementById("result-banner");
+        if (snapshotEvidence > 0) {
+            banner.className = "result-banner result-snapshot";
+            banner.textContent = "\u26a0 SNAPSHOT/CACHE RESTORE DETECTED — "
+                + snapshotEvidence + " probe(s) found evidence that Firefox did NOT "
+                + "re-fetch this page from the server";
+            log("RESULT: " + snapshotEvidence + " probe(s) detected snapshot/cache restore");
+        } else {
+            banner.className = "result-banner result-fresh";
+            banner.textContent = "\u2705 Fresh load — all 5 probes confirm the page was "
+                + "fetched from the server. This is correct behavior.";
+            log("RESULT: All probes OK — fresh load from server");
+        }
+
+        // ================================================================
+        // AUTO-MODIFICATIONS ON DOMContentLoaded
+        // Emulates 423down.com's pattern of dynamically injecting scripts,
+        // styles, and DOM elements after initial parse.
+        // ================================================================
+        document.addEventListener("DOMContentLoaded", function () {
+            log("DOMContentLoaded fired");
+
+            // --- Inject <style> to hide ad placeholders ---
+            // This emulates AdGuard injecting CSS to hide ads, or a site's
+            // own scripts dynamically adding styles.
+            if (!document.getElementById("dynamic-ad-hide")) {
                 var style = document.createElement("style");
-                style.id = "injected-bg-style";
-                style.textContent = "body { background: #d6eaf8 !important; }";
+                style.id = "dynamic-ad-hide";
+                style.textContent = ".ad-placeholder { display: none !important; }";
                 document.head.appendChild(style);
-                document.getElementById("style-present").textContent = "Yes (just injected)";
-                log("Injected <style> into <head> — background is now light blue");
-            });
-        })();
+                log("Injected <style id='dynamic-ad-hide'> into <head> — ad placeholders hidden");
+            } else {
+                log("Skipped <style> injection — already exists from snapshot");
+            }
+
+            // --- Inject <script> that sets a global variable ---
+            // Emulates 423down.com's dynamic script loading pattern.
+            if (!window.__DYNAMIC_LOADED) {
+                var script = document.createElement("script");
+                script.id = "dynamic-script";
+                script.textContent = "window.__DYNAMIC_LOADED = true;";
+                document.head.appendChild(script);
+                log("Injected <script id='dynamic-script'> into <head>");
+            } else {
+                log("Skipped <script> injection — global already set from snapshot");
+            }
+
+            // --- Delayed DOM modification (emulates ad script init) ---
+            // 423down.com uses setTimeout(fn, 2000) for AdSense initialization.
+            setTimeout(function () {
+                var el = document.getElementById("delayed-content");
+                if (el) {
+                    el.textContent = "Delayed content loaded at " + new Date().toISOString()
+                        + " (2s after DOMContentLoaded)";
+                    el.style.color = "#155724";
+                    el.style.borderColor = "#28a745";
+                }
+                log("Delayed content injected (2s setTimeout)");
+            }, 2000);
+
+            // --- Second delayed modification (emulates Funding Choices) ---
+            setTimeout(function () {
+                var el = document.getElementById("delayed-content");
+                if (el) {
+                    el.textContent += " | Phase 2 at " + new Date().toISOString();
+                }
+                log("Phase 2 delayed content (3s setTimeout)");
+            }, 3000);
+        });
+    })();
     </script>
 </body>
 </html>
