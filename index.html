@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Firefox Session Restore Bug — Test Page</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 24px;
+            line-height: 1.6;
+            color: #1a1a1a;
+            background: #ffffff;
+        }
+        h1 { font-size: 1.4em; margin-bottom: 16px; }
+        h2 { font-size: 1.1em; margin: 20px 0 8px; }
+        .status-banner {
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-weight: 600;
+            font-size: 0.95em;
+        }
+        .status-initial {
+            background: #f0f0f0;
+            color: #555;
+            border: 1px solid #ddd;
+        }
+        .status-mutated {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .info-row {
+            display: flex;
+            gap: 8px;
+            align-items: baseline;
+            margin: 4px 0;
+            font-size: 0.9em;
+        }
+        .info-label { font-weight: 600; white-space: nowrap; }
+        .info-value { font-family: monospace; color: #444; }
+        .actions { margin: 16px 0; display: flex; gap: 8px; flex-wrap: wrap; }
+        button {
+            padding: 8px 16px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background: #f8f8f8;
+            cursor: pointer;
+            font-size: 0.9em;
+        }
+        button:hover { background: #e8e8e8; }
+        #item-list {
+            list-style: none;
+            margin: 8px 0;
+            padding: 0;
+        }
+        #item-list li {
+            padding: 4px 8px;
+            margin: 2px 0;
+            background: #f5f5f5;
+            border-radius: 3px;
+            font-size: 0.9em;
+            font-family: monospace;
+        }
+        .section {
+            margin: 20px 0;
+            padding: 16px;
+            background: #fafafa;
+            border: 1px solid #eee;
+            border-radius: 6px;
+        }
+        .section h2 { margin-top: 0; }
+        .section ol { padding-left: 20px; }
+        .section li { margin: 4px 0; font-size: 0.9em; }
+        .note {
+            font-size: 0.85em;
+            color: #666;
+            margin-top: 8px;
+        }
+        .test-group {
+            margin: 12px 0;
+            padding: 12px;
+            border: 1px dashed #ccc;
+            border-radius: 4px;
+        }
+        .test-group h3 {
+            font-size: 0.95em;
+            margin-bottom: 6px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Firefox Session Restore Bug — Test Page</h1>
+
+    <div id="status-banner" class="status-banner status-initial">
+        Initial state — no DOM mutations yet
+    </div>
+
+    <div class="info-row">
+        <span class="info-label">Page loaded at:</span>
+        <span class="info-value" id="load-timestamp"></span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Last action at:</span>
+        <span class="info-value" id="action-timestamp">—</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Items added:</span>
+        <span class="info-value" id="item-count">0</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Background changed:</span>
+        <span class="info-value" id="bg-status">No</span>
+    </div>
+
+    <div class="actions">
+        <button id="btn-add-item">Add Item</button>
+        <button id="btn-change-bg">Change Background</button>
+        <button id="btn-reset">Reset</button>
+    </div>
+
+    <ul id="item-list"></ul>
+
+    <div class="section">
+        <h2>Test 1: List Items (DOM element mutation)</h2>
+        <div class="test-group">
+            <h3>Steps</h3>
+            <ol>
+                <li>Click <strong>"Add Item"</strong> a few times — items appear in the list above</li>
+                <li>Close this tab (<kbd>Ctrl+W</kbd> / <kbd>Cmd+W</kbd>)</li>
+                <li>Restore the tab (<kbd>Ctrl+Shift+T</kbd> / <kbd>Cmd+Shift+T</kbd>)</li>
+            </ol>
+            <h3>What to look for</h3>
+            <p>After restore, the items should be <strong>gone</strong> in Firefox (bug) but <strong>present</strong> in Chrome (correct).</p>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Test 2: Injected &lt;style&gt; (dynamic stylesheet mutation)</h2>
+        <div class="test-group">
+            <h3>Steps</h3>
+            <ol>
+                <li>Click <strong>"Change Background"</strong> — the page background turns light blue</li>
+                <li>Close this tab (<kbd>Ctrl+W</kbd> / <kbd>Cmd+W</kbd>)</li>
+                <li>Restore the tab (<kbd>Ctrl+Shift+T</kbd> / <kbd>Cmd+Shift+T</kbd>)</li>
+            </ol>
+            <h3>What to look for</h3>
+            <p>After restore, the background should revert to <strong>white</strong> in Firefox (bug) — the injected <code>&lt;style&gt;</code> element is lost. In Chrome, the background should remain <strong>light blue</strong> (correct).</p>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>About this page</h2>
+        <p>This page demonstrates a Firefox bug where session restore (Ctrl+Shift+T or browser restart) overwrites DOM changes made <strong>after</strong> the initial page load.</p>
+        <p>Firefox restores tabs from an internal DOM snapshot captured at load time. Any mutations made by JavaScript after load — whether user-triggered or automatic — are silently reverted.</p>
+        <p class="note">Related: <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=706970">Bug 706970</a> (general staleness), <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1395510">Bug 1395510</a>, <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1440408">Bug 1440408</a></p>
+    </div>
+
+    <script>
+        (function () {
+            "use strict";
+
+            // Record load timestamp at parse time
+            var loadTime = new Date().toISOString();
+            document.getElementById("load-timestamp").textContent = loadTime;
+
+            var itemCount = 0;
+            var bgChanged = false;
+
+            var itemList = document.getElementById("item-list");
+            var itemCountEl = document.getElementById("item-count");
+            var actionTimestampEl = document.getElementById("action-timestamp");
+            var bgStatusEl = document.getElementById("bg-status");
+            var statusBanner = document.getElementById("status-banner");
+
+            function updateBanner() {
+                if (itemCount > 0 || bgChanged) {
+                    statusBanner.className = "status-banner status-mutated";
+                    statusBanner.textContent = "DOM has been mutated — " + itemCount + " item(s) added"
+                        + (bgChanged ? ", background changed" : "");
+                } else {
+                    statusBanner.className = "status-banner status-initial";
+                    statusBanner.textContent = "Initial state — no DOM mutations yet";
+                }
+            }
+
+            function recordAction() {
+                actionTimestampEl.textContent = new Date().toISOString();
+            }
+
+            // Test 1: Add list items
+            document.getElementById("btn-add-item").addEventListener("click", function () {
+                itemCount++;
+                var li = document.createElement("li");
+                li.textContent = "Item " + itemCount + " — added at " + new Date().toISOString();
+                itemList.appendChild(li);
+                itemCountEl.textContent = itemCount;
+                recordAction();
+                updateBanner();
+            });
+
+            // Test 2: Inject <style> into <head> to change background
+            document.getElementById("btn-change-bg").addEventListener("click", function () {
+                if (bgChanged) return;
+                var style = document.createElement("style");
+                style.id = "injected-bg-style";
+                style.textContent = "body { background: #d6eaf8 !important; }";
+                document.head.appendChild(style);
+                bgChanged = true;
+                bgStatusEl.textContent = "Yes (light blue)";
+                recordAction();
+                updateBanner();
+            });
+
+            // Reset
+            document.getElementById("btn-reset").addEventListener("click", function () {
+                itemCount = 0;
+                itemList.innerHTML = "";
+                itemCountEl.textContent = "0";
+                var injectedStyle = document.getElementById("injected-bg-style");
+                if (injectedStyle) injectedStyle.remove();
+                bgChanged = false;
+                bgStatusEl.textContent = "No";
+                actionTimestampEl.textContent = "—";
+                updateBanner();
+            });
+        })();
+    </script>
+</body>
+</html>
