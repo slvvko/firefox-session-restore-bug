@@ -264,6 +264,15 @@
         var logEl = document.getElementById("log");
         var snapshotEvidence = 0;
 
+        // Count <style> elements in <head> RIGHT NOW, before our scripts add any.
+        // This is the number of styles the browser loaded from cache/network.
+        // If a proxy (AdGuard) modified the response, its injected styles are here.
+        // If the browser served from cache (bypassing the proxy), they're NOT here.
+        var initialHeadStyles = document.querySelectorAll("head style");
+        var initialStyleCount = initialHeadStyles.length;
+        // Our page's HTML has exactly 1 <style> (the CSS block). Anything extra = proxy.
+        var proxyStylesInDOM = initialStyleCount - 1; // subtract our own static <style>
+
         function log(msg, isError) {
             var div = document.createElement("div");
             div.className = "log-entry" + (isError ? " error" : "");
@@ -433,7 +442,79 @@
         document.addEventListener("DOMContentLoaded", function () {
             log("DOMContentLoaded fired");
 
-            // --- Inject <style> to hide ad placeholders ---
+            // ==============================================================
+            // PROBE 7: PROXY BYPASS DETECTION
+            // Fetch our own URL with cache:'no-store' to force a real network
+            // request through the proxy. Parse the response and count <style>
+            // elements. If the fetched version has MORE styles than our DOM
+            // had at startup, the proxy is injecting — but those injections
+            // were lost from our cached version.
+            // ==============================================================
+            log("PROBE 7: Fetching self with cache:'no-store'...");
+            log("PROBE 7: DOM had " + initialStyleCount + " <style> in <head> at startup (" + proxyStylesInDOM + " extra beyond our 1 static)");
+
+            fetch(location.href, { cache: "no-store" })
+                .then(function (r) { return r.text(); })
+                .then(function (html) {
+                    var parser = new DOMParser();
+                    var fetchedDoc = parser.parseFromString(html, "text/html");
+                    var fetchedStyles = fetchedDoc.querySelectorAll("head style").length;
+                    var fetchedProxyStyles = fetchedStyles - 1; // subtract our static <style>
+
+                    log("PROBE 7: Fresh fetch has " + fetchedStyles + " <style> in <head> (" + fetchedProxyStyles + " extra)");
+
+                    setProbe("probe-proxy-detail",
+                        "DOM at load: " + initialStyleCount + " styles (" + proxyStylesInDOM + " proxy) | "
+                        + "Fresh fetch: " + fetchedStyles + " styles (" + fetchedProxyStyles + " proxy)",
+                        null);
+
+                    if (fetchedProxyStyles > 0 && proxyStylesInDOM < fetchedProxyStyles) {
+                        // Proxy is active (fetch has extra styles) but DOM doesn't have them → BYPASS!
+                        setProbe("probe-proxy",
+                            "\u274c PROXY BYPASS! DOM missing " + (fetchedProxyStyles - proxyStylesInDOM)
+                            + " proxy-injected style(s)", "fail");
+                        log("PROBE 7 FAIL: Proxy is active but " + (fetchedProxyStyles - proxyStylesInDOM)
+                            + " injected style(s) are MISSING from DOM — network was bypassed on restore!", true);
+                        // Update banner
+                        var b = document.getElementById("result-banner");
+                        b.className = "result-banner result-snapshot";
+                        b.textContent = "\u26a0 PROXY BYPASS DETECTED \u2014 Firefox served this page from "
+                            + "HTTP cache without going through the network proxy. "
+                            + (fetchedProxyStyles - proxyStylesInDOM) + " proxy-injected style(s) are missing.";
+                    } else if (fetchedProxyStyles > 0 && proxyStylesInDOM >= fetchedProxyStyles) {
+                        // Proxy is active AND its styles are in the DOM → all good
+                        setProbe("probe-proxy",
+                            "\u2705 Proxy active, styles preserved (" + proxyStylesInDOM + " proxy styles in DOM)",
+                            "pass");
+                        log("PROBE 7 OK: Proxy styles are present in DOM");
+                    } else if (fetchedProxyStyles <= 0 && proxyStylesInDOM <= 0) {
+                        // No proxy detected — both have only our 1 static <style>
+                        setProbe("probe-proxy",
+                            "\u2139\ufe0f No proxy detected (no extra styles in DOM or fetch)",
+                            "warn");
+                        log("PROBE 7: No proxy detected \u2014 both DOM and fetch have only the static <style>");
+                        log("PROBE 7: To test the proxy bypass bug, enable AdGuard or another content-filtering proxy");
+                    } else {
+                        // DOM has more styles than fetch (unexpected)
+                        setProbe("probe-proxy",
+                            "\u2139\ufe0f DOM has " + proxyStylesInDOM + " extra, fetch has " + fetchedProxyStyles + " extra",
+                            "warn");
+                        log("PROBE 7: Unusual \u2014 DOM has more proxy styles than fresh fetch");
+                    }
+
+                    // Store for cross-session comparison
+                    try {
+                        localStorage.setItem("__probe7_fetchStyles", fetchedStyles);
+                        localStorage.setItem("__probe7_domStyles", initialStyleCount);
+                        localStorage.setItem("__probe7_timestamp", now);
+                    } catch (e) { /* ignore */ }
+                })
+                .catch(function (err) {
+                    setProbe("probe-proxy", "\u26a0 fetch failed: " + err.message, "warn");
+                    log("PROBE 7: fetch() failed \u2014 " + err.message, true);
+                });
+
+            // --- Inject <style> to hide ad placeholders (runs in parallel with fetch) ---
             // This emulates AdGuard injecting CSS to hide ads, or a site's
             // own scripts dynamically adding styles.
             if (!document.getElementById("dynamic-ad-hide")) {
